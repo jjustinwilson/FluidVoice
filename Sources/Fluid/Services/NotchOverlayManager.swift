@@ -183,6 +183,7 @@ final class NotchOverlayManager {
         // Start monitoring active app changes (updates icon in real-time)
         ActiveAppMonitor.shared.startMonitoring()
         let targetScreen = OverlayScreenResolver.screenForCurrentPointer()
+        LargeDictationOverlayController.shared.show() // Fork: large dictation overlay
 
         // Route to bottom overlay if user preference is set
         if SettingsStore.shared.overlayPosition == .bottom {
@@ -348,6 +349,7 @@ final class NotchOverlayManager {
         self.isHideInProgress = false
         let waiters = self.hideWaiters
         self.hideWaiters.removeAll(keepingCapacity: true)
+        LargeDictationOverlayController.shared.hideImmediately() // Fork: large dictation overlay
 
         if self.isBottomOverlayVisible {
             BottomOverlayWindowController.shared.hideImmediately()
@@ -417,6 +419,7 @@ final class NotchOverlayManager {
 
         // Stop monitoring active app changes
         ActiveAppMonitor.shared.stopMonitoring()
+        LargeDictationOverlayController.shared.hide() // Fork: large dictation overlay
         DebugLogger.shared.debug("HIDE_TRACE phase=monitor_stopped elapsedUs=\(Int((ProcessInfo.processInfo.systemUptime - startedAt) * 1_000_000))", source: "StopTiming")
 
         // Hide bottom overlay if visible
@@ -755,6 +758,7 @@ final class NotchOverlayManager {
         if SettingsStore.shared.overlayPosition == .bottom {
             return true
         }
+        if SettingsStore.shared.largeDictationOverlayEnabled { return true } // Fork: large dictation overlay
 
         self.refreshNotchPresentationPolicy()
         return self.currentNotchPresentationPolicy.showsStreamingPreview
