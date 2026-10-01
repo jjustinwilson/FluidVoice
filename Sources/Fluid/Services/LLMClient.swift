@@ -125,7 +125,7 @@ final nonisolated class LLMClient: @unchecked Sendable {
         let apiKey: String
         let streaming: Bool
         let tools: [[String: Any]]
-        let temperature: Double?
+        var temperature: Double?
 
         /// Optional token limit (max_tokens or max_completion_tokens depending on model)
         var maxTokens: Int?
@@ -198,6 +198,15 @@ final nonisolated class LLMClient: @unchecked Sendable {
             let response = try await self.executeWithRetry(request: request, config: config)
             self.benchmark(config, "call_return")
             return response
+        } catch let LLMError.httpError(400, message)
+            where config.temperature != nil && message.lowercased().contains("temperature")
+        {
+            // Providers keep deprecating `temperature` on new models. Rather than failing
+            // the whole request, retry once without it.
+            DebugLogger.shared.warning("LLMClient: Provider rejected temperature for \(config.model); retrying without it", source: "LLMClient")
+            var retryConfig = config
+            retryConfig.temperature = nil
+            return try await self.call(retryConfig)
         } catch {
             self.benchmark(config, "call_fail")
             throw error

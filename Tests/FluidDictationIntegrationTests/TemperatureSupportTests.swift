@@ -18,6 +18,12 @@ final class TemperatureSupportTests: XCTestCase {
             "claude-sonnet-5",
             "claude-fable-5",
             "claude-mythos-5",
+            // Future versions must be covered without listing each one
+            "claude-opus-5-5",
+            "claude-sonnet-5-5",
+            "claude-haiku-5",
+            "claude-opus-4-9",
+            "anthropic/claude-opus-5.5",
             // Provider-prefixed and dotted IDs (e.g. OpenRouter) must match too
             "anthropic/claude-sonnet-5",
             "anthropic/claude-opus-4.7",
@@ -84,6 +90,9 @@ final class TemperatureSupportTests: XCTestCase {
             "gpt-4.1",
             "claude-sonnet-4-6",
             "claude-sonnet-4-20250514",
+            "claude-opus-4-1-20250805",
+            "claude-haiku-4-5-20251001",
+            "claude-3-5-sonnet-20241022",
             "gemini-2.5-flash",
             "llama3",
             // OpenRouter-prefixed non-reasoning OpenAI models keep temperature

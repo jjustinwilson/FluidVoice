@@ -3352,17 +3352,25 @@ final class SettingsStore: ObservableObject {
 
     /// Whether the model rejects the `temperature` parameter.
     /// Covers reasoning models plus Anthropic models that have deprecated temperature
-    /// (Opus 4.7+, Sonnet 5, Fable/Mythos 5 — Sonnet 4.6 and older still accept it).
+    /// (Opus 4.7+, any Claude 5+ model, Fable/Mythos — Sonnet 4.6 and older still accept it).
     func isTemperatureUnsupported(_ model: String) -> Bool {
         if self.isReasoningModel(model) { return true }
         // Normalize version separators so dotted IDs (e.g. OpenRouter's
         // anthropic/claude-opus-4.8) match the hyphenated forms below.
         let modelLower = model.lowercased().replacingOccurrences(of: ".", with: "-")
-        return modelLower.contains("claude-opus-4-7")
-            || modelLower.contains("claude-opus-4-8")
-            || modelLower.contains("claude-sonnet-5")
-            || modelLower.contains("claude-fable")
-            || modelLower.contains("claude-mythos")
+        if modelLower.contains("claude-fable") || modelLower.contains("claude-mythos") { return true }
+
+        // Parse "claude-<family>-<major>[-<minor>]" so new versions (e.g. claude-opus-5-5)
+        // are covered without adding each one by hand. Legacy IDs like
+        // "claude-3-5-sonnet" don't match this shape and keep temperature.
+        guard let range = modelLower.range(of: #"claude-(opus|sonnet|haiku)-(\d+)(?:-(\d{1,2})(?!\d))?"#, options: .regularExpression)
+        else { return false }
+        let parts = modelLower[range].split(separator: "-")
+        let family = parts[1]
+        let major = Int(parts[2]) ?? 0
+        let minor = parts.count > 3 ? Int(parts[3]) ?? 0 : 0
+        if major >= 5 { return true }
+        return family == "opus" && major == 4 && minor >= 7
     }
 
     /// Whether to display thinking tokens in the UI (Command Mode, Rewrite Mode)
