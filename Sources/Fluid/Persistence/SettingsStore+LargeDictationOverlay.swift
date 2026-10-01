@@ -6,6 +6,7 @@
 //  Kept in its own file so upstream merges into SettingsStore.swift stay clean.
 //
 
+import Combine
 import Foundation
 
 extension SettingsStore {
