@@ -4951,6 +4951,7 @@ struct ContentView: View {
             NotchOverlayManager.shared.hide()
             handled = true
         }
+        if LargeDictationOverlayController.shared.isVisible { NotchContentState.shared.clearAIProcessingFailure(); NotchOverlayManager.shared.hide(); LargeDictationOverlayController.shared.hide(); handled = true } // Fork: large dictation overlay
 
         if self.selectedSidebarItem == .rewriteMode {
             DebugLogger.shared.debug("Cancel shortcut: closing mode view", source: "ContentView")

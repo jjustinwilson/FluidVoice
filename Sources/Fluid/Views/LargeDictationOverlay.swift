@@ -22,8 +22,13 @@ final class LargeDictationOverlayController {
     private static let fadeOutDuration: TimeInterval = 0.12
     private static let previewDuration: TimeInterval = 4
 
+    private static let controlsInset: CGFloat = 14
+
     private let model = LargeDictationOverlayModel()
     private var panel: NSPanel?
+    /// Small clickable child panel for the close/retry buttons. The main panel stays
+    /// click-through so the big HUD never blocks the app underneath.
+    private var controlsPanel: NSPanel?
     private var isPresented = false
     private var hideGeneration: UInt64 = 0
     private var previewHideWorkItem: DispatchWorkItem?
@@ -58,6 +63,28 @@ final class LargeDictationOverlayController {
         self.present()
     }
 
+    var isVisible: Bool { self.isPresented }
+
+    /// Cancels an in-progress recording (discarding it) or dismisses the overlay,
+    /// e.g. when it was left up after an AI enhancement failure.
+    func cancel() {
+        let content = NotchContentState.shared
+        let isPreview = self.model.previewText != nil
+        if !isPreview {
+            content.clearAIProcessingFailure()
+            content.clearTextDeliveryFailure()
+            content.onCancelRequested?()
+            NotchOverlayManager.shared.hide()
+        }
+        self.hide()
+    }
+
+    func retryAIProcessing() {
+        let content = NotchContentState.shared
+        content.clearAIProcessingFailure()
+        content.onReprocessLastRequested?()
+    }
+
     /// When on, the large overlay stands in for the pill/notch. Command mode keeps
     /// the pill because its expanded output and actions live there.
     func replacesPill(for mode: OverlayMode) -> Bool {
@@ -88,12 +115,15 @@ final class LargeDictationOverlayController {
         self.hideGeneration &+= 1
         let generation = self.hideGeneration
 
+        let controlsPanel = self.controlsPanel
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Self.fadeOutDuration
             panel.animator().alphaValue = 0
+            controlsPanel?.animator().alphaValue = 0
         } completionHandler: {
             Task { @MainActor [weak self] in
                 guard let self, self.hideGeneration == generation, !self.isPresented else { return }
+                controlsPanel?.orderOut(nil)
                 panel.orderOut(nil)
                 self.model.previewText = nil
             }
@@ -106,6 +136,8 @@ final class LargeDictationOverlayController {
         self.isPresented = false
         self.hideGeneration &+= 1
         self.panel?.alphaValue = 0
+        self.controlsPanel?.alphaValue = 0
+        self.controlsPanel?.orderOut(nil)
         self.panel?.orderOut(nil)
         self.model.previewText = nil
     }
@@ -125,12 +157,15 @@ final class LargeDictationOverlayController {
 
         if !panel.isVisible {
             panel.alphaValue = 0
+            self.controlsPanel?.alphaValue = 0
         }
         panel.orderFrontRegardless()
+        self.controlsPanel?.orderFrontRegardless()
         panel.invalidateShadow()
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Self.fadeInDuration
             panel.animator().alphaValue = 1
+            self.controlsPanel?.animator().alphaValue = 1
         }
     }
 
@@ -165,6 +200,21 @@ final class LargeDictationOverlayController {
         )
         panel.setFrame(NSRect(origin: origin, size: size), display: true)
         panel.invalidateShadow()
+        self.positionControlsPanel()
+    }
+
+    /// Pins the controls to the overlay's top-right corner, sized to fit the buttons.
+    private func positionControlsPanel() {
+        guard let panel = self.panel, let controlsPanel = self.controlsPanel,
+              let contentView = controlsPanel.contentView
+        else { return }
+        let size = contentView.fittingSize
+        let frame = panel.frame
+        let origin = NSPoint(
+            x: (frame.maxX - Self.controlsInset - size.width).rounded(),
+            y: (frame.maxY - Self.controlsInset - size.height).rounded()
+        )
+        controlsPanel.setFrame(NSRect(origin: origin, size: size), display: true)
     }
 
     private func makePanel() -> NSPanel {
@@ -191,6 +241,31 @@ final class LargeDictationOverlayController {
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = .clear
         panel.contentView = hostingView
+
+        let controlsPanel = NSPanel(
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        controlsPanel.isFloatingPanel = true
+        controlsPanel.level = panel.level
+        controlsPanel.collectionBehavior = panel.collectionBehavior
+        controlsPanel.isOpaque = false
+        controlsPanel.backgroundColor = .clear
+        controlsPanel.hasShadow = false
+        controlsPanel.hidesOnDeactivate = false
+        controlsPanel.animationBehavior = .none
+        let controlsView = LargeDictationOverlayControlsHostingView(
+            rootView: LargeDictationOverlayControlsView(model: self.model) { [weak self] in
+                // Button content changes size (Retry appears/disappears); keep it pinned.
+                self?.positionControlsPanel()
+            }
+        )
+        controlsView.sizingOptions = [.intrinsicContentSize]
+        controlsPanel.contentView = controlsView
+        panel.addChildWindow(controlsPanel, ordered: .above)
+        self.controlsPanel = controlsPanel
 
         return panel
     }
@@ -231,6 +306,9 @@ struct LargeDictationOverlayView: View {
 
     private var statusText: String? {
         if self.model.previewText != nil { return "Preview" }
+        if self.content.isAIProcessingFailureVisible && !self.content.isProcessing {
+            return self.content.aiProcessingFailureMessage
+        }
         if Self.statusTexts.contains(self.trimmedTranscript) { return self.trimmedTranscript }
         if self.content.isProcessing { return "Processing..." }
         return nil
@@ -311,6 +389,77 @@ struct LargeDictationOverlayView: View {
                 endPoint: .bottom
             )
         )
+    }
+}
+
+// MARK: - Controls
+
+/// Lets the close button respond to the first click without activating FluidVoice.
+private final class LargeDictationOverlayControlsHostingView: NSHostingView<LargeDictationOverlayControlsView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+struct LargeDictationOverlayControlsView: View {
+    @ObservedObject var model: LargeDictationOverlayModel
+    @ObservedObject private var content = NotchContentState.shared
+    let onLayoutChange: () -> Void
+
+    private var showsRetry: Bool {
+        self.model.previewText == nil
+            && self.content.isAIProcessingFailureVisible
+            && self.content.canRetryAIProcessingFailure
+            && !self.content.isProcessing
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if self.showsRetry {
+                LargeDictationOverlayControlButton(systemImage: "arrow.clockwise", label: "Retry") {
+                    LargeDictationOverlayController.shared.retryAIProcessing()
+                }
+                .help("Try AI enhancement again")
+            }
+            LargeDictationOverlayControlButton(systemImage: "xmark", label: nil) {
+                LargeDictationOverlayController.shared.cancel()
+            }
+            .help(self.content.isProcessing ? "Close overlay" : "Cancel dictation and close")
+            .accessibilityLabel("Cancel dictation")
+        }
+        .padding(2)
+        .fixedSize()
+        .environment(\.colorScheme, .dark)
+        .onChange(of: self.showsRetry) { _, _ in
+            DispatchQueue.main.async { self.onLayoutChange() }
+        }
+    }
+}
+
+private struct LargeDictationOverlayControlButton: View {
+    let systemImage: String
+    let label: String?
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: self.action) {
+            HStack(spacing: 5) {
+                Image(systemName: self.systemImage)
+                    .font(.system(size: 12, weight: .bold))
+                if let label {
+                    Text(label)
+                        .font(.system(size: 12, weight: .semibold))
+                }
+            }
+            .foregroundStyle(Color.white.opacity(self.isHovering ? 1 : 0.8))
+            .padding(.horizontal, self.label == nil ? 0 : 10)
+            .frame(minWidth: 28, minHeight: 28)
+            .background(
+                Capsule().fill(Color.white.opacity(self.isHovering ? 0.25 : 0.14))
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { self.isHovering = $0 }
     }
 }
 
