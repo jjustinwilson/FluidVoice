@@ -184,6 +184,7 @@ final class NotchOverlayManager {
         ActiveAppMonitor.shared.startMonitoring()
         let targetScreen = OverlayScreenResolver.screenForCurrentPointer()
         LargeDictationOverlayController.shared.show() // Fork: large dictation overlay
+        if LargeDictationOverlayController.shared.replacesPill(for: mode) { self.currentMode = self.normalizedOverlayMode(mode); return } // Fork: large dictation overlay
 
         // Route to bottom overlay if user preference is set
         if SettingsStore.shared.overlayPosition == .bottom {

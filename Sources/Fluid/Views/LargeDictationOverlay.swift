@@ -58,6 +58,12 @@ final class LargeDictationOverlayController {
         self.present()
     }
 
+    /// When on, the large overlay stands in for the pill/notch. Command mode keeps
+    /// the pill because its expanded output and actions live there.
+    func replacesPill(for mode: OverlayMode) -> Bool {
+        SettingsStore.shared.largeDictationOverlayEnabled && mode != .command
+    }
+
     /// Shows the overlay with sample text so the user can judge size and opacity.
     func showPreview() {
         guard !self.isPresented || self.model.previewText != nil else { return }

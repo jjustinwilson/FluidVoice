@@ -22,7 +22,7 @@ struct LargeDictationOverlaySettingsSection: View {
                     Text("Large Dictation Overlay")
                         .font(self.theme.typography.bodyStrong)
                         .foregroundStyle(self.titleColor)
-                    Text("Show live dictation in a large box in the middle of the screen")
+                    Text("Show live dictation in a large box in the middle of the screen, in place of the pill")
                         .font(self.theme.typography.bodySmall)
                         .foregroundStyle(self.secondaryColor)
                 }
