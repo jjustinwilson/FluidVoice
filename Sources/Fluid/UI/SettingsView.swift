@@ -1503,6 +1503,10 @@ struct SettingsView: View {
                             }
                             .settingsSearchTarget(.transcriptionPreviewLength)
 
+                            // Fork: large dictation overlay
+                            Divider().padding(.vertical, 8)
+                            LargeDictationOverlaySettingsSection(titleColor: self.settingsTitleText, secondaryColor: self.settingsSecondaryText)
+
                             Divider().padding(.vertical, 4)
 
                             if self.asr.isRunning {
